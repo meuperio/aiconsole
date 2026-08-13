@@ -89,6 +89,11 @@ export function EvalTab() {
         correct: 0,
         falsePositive: [],
         falseNegative: 0
+      },
+      alignmentMetrics: {
+        truePositives: 0,
+        falsePositives: 0,
+        falseNegatives: 0
       }
     };
 
@@ -183,6 +188,21 @@ export function EvalTab() {
 
     groups.forEach(g => {
        const groupSentences = g.claim_ids.map(id => allClaims.find(c => c.id === id)?.source_sentence).filter(Boolean) as string[];
+       
+       let distinctGoldConcepts = new Set<string>();
+       groupSentences.forEach(s => {
+          const goldConcept = sentenceToGold.get(s);
+          if (goldConcept) {
+             distinctGoldConcepts.add(goldConcept);
+          }
+       });
+
+       if (distinctGoldConcepts.size > 1) {
+          report.falseMerges.push({
+             pipelineGroupId: g.group_id,
+             sentences: groupSentences
+          });
+       }
        
        for(let i=0; i<groupSentences.length; i++) {
           for(let j=i+1; j<groupSentences.length; j++) {
@@ -293,7 +313,7 @@ export function EvalTab() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-3 gap-4">
               <div className="bg-[#171719] border border-[#262626] rounded-lg p-4 text-center flex flex-col justify-center">
                 <div className="text-3xl font-light text-[#10B981] mb-1">
                   {report.alignmentMetrics.truePositives > 0 || report.alignmentMetrics.falsePositives > 0
@@ -312,6 +332,13 @@ export function EvalTab() {
                 <div className="text-[10px] text-[#737373] uppercase tracking-wider font-bold">Alignment Recall</div>
                 <div className="text-[9px] text-[#525252] mt-1">TP: {report.alignmentMetrics.truePositives} / FN: {report.alignmentMetrics.falseNegatives}</div>
               </div>
+              <div className="bg-[#171719] border border-[#262626] rounded-lg p-4 text-center flex flex-col justify-center">
+                <div className="text-3xl font-light text-[#EF4444] mb-1">
+                  {report.falseMerges.length}
+                </div>
+                <div className="text-[10px] text-[#737373] uppercase tracking-wider font-bold">False Merges</div>
+                <div className="text-[9px] text-[#525252] mt-1">Groups containing distinct gold concepts</div>
+              </div>
             </div>
 
             <div className="space-y-6">
@@ -327,6 +354,27 @@ export function EvalTab() {
                     </div>
                   ))}
                   {report.correctMerges.length === 0 && <p className="text-xs text-[#737373]">None found.</p>}
+                </div>
+              </section>
+
+              <section>
+                <h3 className="text-sm font-medium text-[#EF4444] mb-3 flex items-center gap-2">
+                  <XCircle className="w-4 h-4" /> False Merges
+                </h3>
+                <div className="space-y-3">
+                  {report.falseMerges.map((m, i) => (
+                    <div key={i} className="bg-[#111112] border border-[#7F1D1D]/30 rounded p-4 text-sm">
+                      <div className="text-[#FCA5A5] font-medium mb-3">Group ID: {m.pipelineGroupId}</div>
+                      <div className="space-y-2">
+                        {m.sentences.map((s, j) => (
+                          <div key={j} className="text-xs text-[#A3A3A3] font-mono pl-3 border-l-2 border-[#7F1D1D]/50">
+                            "{s}"
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                  {report.falseMerges.length === 0 && <p className="text-xs text-[#737373]">None found.</p>}
                 </div>
               </section>
 

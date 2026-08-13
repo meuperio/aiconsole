@@ -64,4 +64,5 @@ export interface PipelineResults {
   claims: Claim[];
   groups: TriagedGroup[];
   constraintChecks: CandidateResult[];
+  successfulCandidatesCount: number;
 }

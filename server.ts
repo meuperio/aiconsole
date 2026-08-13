@@ -53,6 +53,33 @@ ${text}`;
         contents: prompt,
         config: {
           responseMimeType: "application/json",
+          responseSchema: {
+            type: "object",
+            properties: {
+              claims: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    id: { type: "string" },
+                    text: { type: "string" },
+                    type: {
+                      type: "string",
+                      enum: [
+                        "date", "quantity", "version", "citation",
+                        "capability", "requirement", "causal",
+                        "recommendation", "opinion", "inference"
+                      ]
+                    },
+                    source_sentence: { type: "string" },
+                    hedged: { type: "boolean" }
+                  },
+                  required: ["id", "text", "type", "source_sentence", "hedged"]
+                }
+              }
+            },
+            required: ["claims"]
+          }
         },
       });
 
@@ -100,6 +127,33 @@ ${JSON.stringify(claims, null, 2)}`;
         contents: prompt,
         config: {
           responseMimeType: "application/json",
+          responseSchema: {
+            type: "OBJECT",
+            properties: {
+              claims: {
+                type: "ARRAY",
+                items: {
+                  type: "OBJECT",
+                  properties: {
+                    id: { type: "STRING" },
+                    text: { type: "STRING" },
+                    type: {
+                      type: "STRING",
+                      enum: [
+                        "date", "quantity", "version", "citation",
+                        "capability", "requirement", "causal",
+                        "recommendation", "opinion", "inference"
+                      ]
+                    },
+                    source_sentence: { type: "STRING" },
+                    hedged: { type: "BOOLEAN" }
+                  },
+                  required: ["id", "text", "type", "source_sentence", "hedged"]
+                }
+              }
+            },
+            required: ["claims"]
+          }
         },
       });
 

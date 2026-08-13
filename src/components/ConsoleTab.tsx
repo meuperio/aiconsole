@@ -28,6 +28,7 @@ export function ConsoleTab() {
   const [checkError, setCheckError] = useState('');
   
   const [results, setResults] = useState<PipelineResults | null>(null);
+  const [failedExtCandidates, setFailedExtCandidates] = useState<string[]>([]);
   const [selectedGroup, setSelectedGroup] = useState<TriagedGroup | null>(null);
   const [showDebug, setShowDebug] = useState(false);
 
@@ -59,15 +60,17 @@ export function ConsoleTab() {
     setStageCheck('pending');
   };
 
-  const runPipeline = async (retryStage?: 'ext' | 'align' | 'check') => {
+  const runPipeline = async (retryStage?: 'ext' | 'retry-failed-ext' | 'align' | 'check') => {
     setIsRunning(true);
     setIsLocked(true);
     
     let currentClaims: Claim[] = results?.claims || [];
     let currentGroups: TriagedGroup[] = results?.groups || [];
     let currentChecks: CandidateResult[] = results?.constraintChecks || [];
+    let currentSuccessCount = results?.successfulCandidatesCount || candidates.filter(c => c.text.trim().length > 0).length;
 
-    const shouldRunExt = !retryStage || retryStage === 'ext';
+    const shouldRunExt = !retryStage || retryStage === 'ext' || retryStage === 'retry-failed-ext';
+    const isRetryingFailed = retryStage === 'retry-failed-ext';
     
     // STAGE 1 & 2: Extraction
     if (shouldRunExt) {
@@ -85,6 +88,10 @@ export function ConsoleTab() {
         // Stage 2: Extraction (Parallel)
         const extPromises = blinded.map(async (c) => {
           if (!c.text.trim()) return [];
+          if (isRetryingFailed && !failedExtCandidates.includes(c.label)) {
+            // Already succeeded, just return existing claims
+            return currentClaims.filter(claim => claim.candidateLabel === c.label);
+          }
           const extracted = await extractClaims(c.text, c.prefix);
           return extracted.map(claim => ({
             ...claim,
@@ -97,14 +104,21 @@ export function ConsoleTab() {
         
         let allClaims: Claim[] = [];
         let failedCandidates: string[] = [];
+        let successCount = 0;
         
         extResults.forEach((res, index) => {
           if (res.status === 'fulfilled') {
             allClaims = allClaims.concat(res.value);
+            if (blinded[index].text.trim().length > 0) {
+              successCount++;
+            }
           } else {
             failedCandidates.push(blinded[index].label);
           }
         });
+        
+        currentSuccessCount = successCount;
+        setFailedExtCandidates(failedCandidates);
 
         if (failedCandidates.length > 0) {
           if (allClaims.length > 0) {
@@ -152,8 +166,7 @@ export function ConsoleTab() {
         const validatedGroups = enforceOneGroupPerClaim(rawGroups, currentClaims);
         
         // Stage 4: Triage (Deterministic)
-        const validCandidatesCount = candidates.filter(c => c.text.trim().length > 0).length;
-        currentGroups = computeTriage(validatedGroups, currentClaims, validCandidatesCount);
+        currentGroups = computeTriage(validatedGroups, currentClaims, currentSuccessCount);
         
         // Sort: verify rows first
         currentGroups.sort((a, b) => {
@@ -168,7 +181,7 @@ export function ConsoleTab() {
         setAlignError(err.message);
         setIsRunning(false);
         // Save intermediate state
-        setResults({ claims: currentClaims, groups: currentGroups, constraintChecks: currentChecks });
+        setResults({ claims: currentClaims, groups: currentGroups, constraintChecks: currentChecks, successfulCandidatesCount: currentSuccessCount });
         return;
       }
     }
@@ -197,7 +210,7 @@ export function ConsoleTab() {
         setCheckError(err.message);
         setIsRunning(false);
         // Save intermediate state
-        setResults({ claims: currentClaims, groups: currentGroups, constraintChecks: currentChecks });
+        setResults({ claims: currentClaims, groups: currentGroups, constraintChecks: currentChecks, successfulCandidatesCount: currentSuccessCount });
         return;
       }
     } else if (!constraints.trim()) {
@@ -207,7 +220,8 @@ export function ConsoleTab() {
     setResults({
       claims: currentClaims,
       groups: currentGroups,
-      constraintChecks: currentChecks
+      constraintChecks: currentChecks,
+      successfulCandidatesCount: currentSuccessCount
     });
     setIsRunning(false);
   };
