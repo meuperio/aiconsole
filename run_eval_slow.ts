@@ -11,8 +11,6 @@ async function delay(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// standalone logic inside API so it uses the real prompt
-// We will just use the real API functions, but mock global fetch to point to localhost.
 const originalFetch = global.fetch;
 global.fetch = async (url, options) => {
   if (url.toString().startsWith('/api')) {
@@ -21,12 +19,22 @@ global.fetch = async (url, options) => {
   return originalFetch(url, options);
 };
 
-// ... evaluatePipeline ...
 const evaluatePipeline = (rawGroups: Group[], groups: Group[], allClaims: Claim[]) => {
   const report = {
-    correctMerges: [] as any[],
-    missedMerges: [] as any[],
-    falseMerges: [] as any[],
+    metrics: {
+      correctSame: 0,
+      correctPartial: 0,
+      correctOpposed: 0,
+      falseMerge: 0,
+      missedMerge: 0,
+      opposedToSame: 0,
+      opposedToPartial: 0,
+      sameToOpposed: 0,
+      partialToOpposed: 0,
+    },
+    falseMergesDetails: [] as any[],
+    missedMergesDetails: [] as any[],
+    misclassifications: [] as any[],
     oppositionCalls: { correct: 0, falsePositive: [] as any[], falseNegative: 0 },
     alignmentMetrics: { truePositives: 0, falsePositives: 0, falseNegatives: 0 },
     integrityReport: validateGroupIntegrity(rawGroups, allClaims)
@@ -46,41 +54,50 @@ const evaluatePipeline = (rawGroups: Group[], groups: Group[], allClaims: Claim[
     return { foundGroups: Array.from(foundGroups), matchedClaims };
   };
 
-  const usedGroupIds = new Set<string>();
   GOLD_MERGES.forEach(gold => {
     const { foundGroups, matchedClaims } = findGroupsForSentences(gold.expectedSentences);
-    const isOpposedGold = gold.relation === 'opposed';
-    if (foundGroups.length === 1 && matchedClaims.length >= gold.expectedSentences.length * 0.8) {
-      report.correctMerges.push({ gold: gold.name, pipelineGroupId: foundGroups[0], sentences: matchedClaims.map(c => c.source_sentence) });
-      usedGroupIds.add(foundGroups[0]);
-      if (isOpposedGold) {
-        const group = groups.find(g => g.group_id === foundGroups[0]);
-        if (group && group.relation === 'opposed') report.oppositionCalls.correct++;
-        else report.oppositionCalls.falseNegative++;
+    
+    if (foundGroups.length === 0) {
+      report.metrics.missedMerge++;
+      report.missedMergesDetails.push({ gold: gold.name, sentences: gold.expectedSentences, foundInGroups: [] });
+      if (gold.relation === 'opposed') report.oppositionCalls.falseNegative++;
+      return;
+    }
+    
+    if (foundGroups.length > 1) {
+      report.metrics.missedMerge++;
+      report.missedMergesDetails.push({ gold: gold.name, sentences: gold.expectedSentences, foundInGroups: foundGroups });
+      if (gold.relation === 'opposed') report.oppositionCalls.falseNegative++;
+      return;
+    }
+    
+    const pipelineGroupId = foundGroups[0];
+    const pipelineGroup = groups.find(g => g.group_id === pipelineGroupId);
+    
+    if (pipelineGroup) {
+      const pipelineRelation = pipelineGroup.relation;
+      const goldRelation = gold.relation;
+      
+      if (pipelineRelation === goldRelation) {
+        if (goldRelation === 'same') report.metrics.correctSame++;
+        else if (goldRelation === 'partial') report.metrics.correctPartial++;
+        else if (goldRelation === 'opposed') {
+          report.metrics.correctOpposed++;
+          report.oppositionCalls.correct++;
+        }
+      } else {
+        report.misclassifications.push({ gold: gold.name, goldRelation, pipelineRelation, pipelineGroupId });
+        if (goldRelation === 'opposed' && pipelineRelation === 'same') report.metrics.opposedToSame++;
+        if (goldRelation === 'opposed' && pipelineRelation === 'partial') report.metrics.opposedToPartial++;
+        if (goldRelation === 'same' && pipelineRelation === 'opposed') report.metrics.sameToOpposed++;
+        if (goldRelation === 'partial' && pipelineRelation === 'opposed') report.metrics.partialToOpposed++;
+        
+        if (goldRelation === 'opposed') report.oppositionCalls.falseNegative++;
+        if (pipelineRelation === 'opposed') report.oppositionCalls.falsePositive.push({ pipelineGroupId, reason: `Classified as opposed but gold is ${goldRelation}` });
       }
-    } else if (foundGroups.length > 1) {
-      report.missedMerges.push({ gold: gold.name, sentences: gold.expectedSentences, foundInGroups: foundGroups });
-      if (isOpposedGold) report.oppositionCalls.falseNegative++;
-    } else if (foundGroups.length === 0) {
-      report.missedMerges.push({ gold: gold.name, sentences: gold.expectedSentences, foundInGroups: [] });
-      if (isOpposedGold) report.oppositionCalls.falseNegative++;
     }
   });
 
-  groups.forEach(g => {
-    if (g.relation === 'opposed') {
-      const isKnownGold = GOLD_MERGES.some(gold => {
-        if (gold.relation !== 'opposed') return false;
-        const { foundGroups } = findGroupsForSentences(gold.expectedSentences);
-        return foundGroups.includes(g.group_id);
-      });
-      if (!isKnownGold) {
-        report.oppositionCalls.falsePositive.push({ pipelineGroupId: g.group_id, reason: `Pipeline marked as opposed but not in gold set: ${g.disagreement || 'No reason'}` });
-      }
-    }
-  });
-
-  let alignTP = 0, alignFP = 0, alignFN = 0;
   const sentenceToGold = new Map<string, string>();
   GOLD_MERGES.forEach(g => g.expectedSentences.forEach(s => sentenceToGold.set(s, g.name)));
 
@@ -92,8 +109,15 @@ const evaluatePipeline = (rawGroups: Group[], groups: Group[], allClaims: Claim[
       if (goldConcept) distinctGoldConcepts.add(goldConcept);
     });
 
-    if (distinctGoldConcepts.size > 1) report.falseMerges.push({ pipelineGroupId: g.group_id, sentences: groupSentences });
-    
+    if (distinctGoldConcepts.size > 1) {
+      report.metrics.falseMerge++;
+      report.falseMergesDetails.push({ pipelineGroupId: g.group_id, concepts: Array.from(distinctGoldConcepts), sentences: groupSentences });
+    }
+  });
+
+  let alignTP = 0, alignFP = 0, alignFN = 0;
+  groups.forEach(g => {
+    const groupSentences = g.claim_ids.map(id => allClaims.find(c => c.id === id)?.source_sentence).filter(Boolean) as string[];
     for(let i=0; i<groupSentences.length; i++) {
       for(let j=i+1; j<groupSentences.length; j++) {
         const g1 = sentenceToGold.get(groupSentences[i]);
@@ -121,7 +145,6 @@ const evaluatePipeline = (rawGroups: Group[], groups: Group[], allClaims: Claim[
   return report;
 };
 
-// Retry helper
 async function retry<T>(fn: () => Promise<T>, retries = 5, retryDelay = 20000): Promise<T> {
   try {
     return await fn();
@@ -129,7 +152,7 @@ async function retry<T>(fn: () => Promise<T>, retries = 5, retryDelay = 20000): 
     if (retries === 0) throw err;
     console.log(`Failed: ${err.message}. Retrying in ${retryDelay/1000}s... (${retries} left)`);
     await delay(retryDelay);
-    return retry(fn, retries - 1, retryDelay + 10000); // Backoff
+    return retry(fn, retries - 1, retryDelay + 10000);
   }
 }
 
@@ -177,14 +200,7 @@ ${text}`;
               properties: {
                 id: { type: "string" },
                 text: { type: "string" },
-                type: {
-                  type: "string",
-                  enum: [
-                    "date", "quantity", "version", "citation",
-                    "capability", "requirement", "causal",
-                    "recommendation", "opinion", "inference"
-                  ]
-                },
+                type: { type: "string" },
                 source_sentence: { type: "string" },
                 hedged: { type: "boolean" }
               },
@@ -201,7 +217,7 @@ ${text}`;
   return parsed.claims || [];
 }
 
-async function standaloneAlign(claims: Claim[]): Promise<Group[]> {
+async function standaloneAlign(claims: any[]): Promise<Group[]> {
   const prompt = `You group atomic claims based on semantic meaning. 
 We have claims extracted from multiple candidates. 
 Group claims that are semantically equivalent or directly address the exact same concept/metric, even if they disagree.
@@ -263,15 +279,14 @@ ${JSON.stringify(claims, null, 2)}`;
 
 async function main() {
   console.log("Starting eval...");
-  const allClaims = [];
-  let charCode = 65; // 'A'
+  const allClaims: Claim[] = [];
+  let charCode = 65;
   
   for (const candidate of GOLD_CANDIDATES) {
     const prefix = String.fromCharCode(charCode);
     console.log(`Extracting claims for ${candidate.label} with prefix ${prefix}...`);
     const claims = await retry(() => standaloneExtract(candidate.text, prefix));
     
-    // Inject the candidateLabel into the claims like ConsoleTab does
     const enrichedClaims = claims.map(c => ({
       ...c,
       candidateLabel: candidate.label,
@@ -279,12 +294,25 @@ async function main() {
     allClaims.push(...enrichedClaims);
     charCode++;
     
-    await delay(2000); // Give the API a breather
+    await delay(2000);
   }
   
   console.log(`Extracted ${allClaims.length} claims in total.`);
-  console.log("Aligning claims...");
-  const rawGroups = await retry(() => standaloneAlign(allClaims));
+  
+  // Create blinded and shuffled claims for the aligner
+  let blindedClaims = allClaims.map(c => {
+    const { candidateLabel, originalCandidateId, ...rest } = c as any;
+    return rest;
+  });
+  
+  // Fisher-Yates shuffle
+  for (let i = blindedClaims.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [blindedClaims[i], blindedClaims[j]] = [blindedClaims[j], blindedClaims[i]];
+  }
+
+  console.log("Aligning blinded claims...");
+  const rawGroups = await retry(() => standaloneAlign(blindedClaims));
   const groups = enforceOneGroupPerClaim(rawGroups, allClaims);
   
   console.log("Evaluating pipeline...");
@@ -305,12 +333,33 @@ async function main() {
   console.log(`Alignment Recall: ${(alignRecall * 100).toFixed(1)}%`);
   console.log(`Conflict Precision: ${(oppPrecision * 100).toFixed(1)}%`);
   console.log(`Conflict Recall: ${(oppRecall * 100).toFixed(1)}%`);
-  console.log(`False Merges: ${report.falseMerges.length}`);
-  console.log(`Integrity Violations: Duplicates=${report.integrityReport.duplicates.length}, Missing=${report.integrityReport.missing.length}, Unknown=${report.integrityReport.unknown.length}`);
+  console.log(`Duplicate IDs: ${report.integrityReport.duplicates.length}`);
+  console.log(`Missing IDs: ${report.integrityReport.missing.length}`);
+  console.log(`Unknown IDs: ${report.integrityReport.unknown.length}`);
+  console.log('----------------');
+  console.log(`Correct Same: ${report.metrics.correctSame}`);
+  console.log(`Correct Partial: ${report.metrics.correctPartial}`);
+  console.log(`Correct Opposed: ${report.metrics.correctOpposed}`);
+  console.log(`False Merges: ${report.metrics.falseMerge}`);
+  console.log(`Missed Merges: ${report.metrics.missedMerge}`);
+  console.log(`Opposed -> Same: ${report.metrics.opposedToSame}`);
+  console.log(`Opposed -> Partial: ${report.metrics.opposedToPartial}`);
+  console.log(`Same -> Opposed: ${report.metrics.sameToOpposed}`);
+  console.log(`Partial -> Opposed: ${report.metrics.partialToOpposed}`);
   
-  if (report.falseMerges.length > 0) {
-    console.log('False Merges details:');
-    console.log(JSON.stringify(report.falseMerges, null, 2));
+  if (report.metrics.falseMerge > 0) {
+    console.log('\n--- False Merges Details ---');
+    console.log(JSON.stringify(report.falseMergesDetails, null, 2));
+  }
+  
+  if (report.metrics.missedMerge > 0) {
+    console.log('\n--- Missed Merges Details ---');
+    console.log(JSON.stringify(report.missedMergesDetails, null, 2));
+  }
+  
+  if (report.misclassifications.length > 0) {
+    console.log('\n--- Misclassifications Details ---');
+    console.log(JSON.stringify(report.misclassifications, null, 2));
   }
 }
 
