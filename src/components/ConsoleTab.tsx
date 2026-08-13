@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Lock, Unlock, Play, RotateCcw, AlertTriangle, Bug } from 'lucide-react';
 import { extractClaims, alignClaims, checkConstraints } from '../utils/api';
-import { computeTriage } from '../utils/triage';
+import { computeTriage, enforceOneGroupPerClaim } from '../utils/triage';
 import { PipelineStage } from './PipelineStage';
 import type { 
   CandidateInput, PipelineResults, Claim, TriagedGroup, CandidateResult 
@@ -109,16 +109,18 @@ export function ConsoleTab() {
         if (failedCandidates.length > 0) {
           if (allClaims.length > 0) {
             currentClaims = allClaims; // Preserve successful ones
+            setExtError(`Partial extraction failure: ${failedCandidates.join(', ')}`);
+            setStageExt('success'); // allow pipeline to continue for the rest
+          } else {
+            throw new Error(`Extraction failed for: ${failedCandidates.join(', ')}`);
           }
-          throw new Error(`Extraction failed for: ${failedCandidates.join(', ')}`);
+        } else {
+          if (allClaims.length === 0) {
+            throw new Error("No claims could be extracted from any candidate.");
+          }
+          currentClaims = allClaims;
+          setStageExt('success');
         }
-
-        if (allClaims.length === 0) {
-          throw new Error("No claims could be extracted from any candidate.");
-        }
-
-        currentClaims = allClaims;
-        setStageExt('success');
       } catch (err: any) {
         setStageExt('error');
         setExtError(err.message);
@@ -146,11 +148,12 @@ export function ConsoleTab() {
           hedged: c.hedged
         }));
         
-        const groups = await alignClaims(blindedClaims as Claim[]);
+        const rawGroups = await alignClaims(blindedClaims as Claim[]);
+        const validatedGroups = enforceOneGroupPerClaim(rawGroups, currentClaims);
         
         // Stage 4: Triage (Deterministic)
         const validCandidatesCount = candidates.filter(c => c.text.trim().length > 0).length;
-        currentGroups = computeTriage(groups, currentClaims, validCandidatesCount);
+        currentGroups = computeTriage(validatedGroups, currentClaims, validCandidatesCount);
         
         // Sort: verify rows first
         currentGroups.sort((a, b) => {

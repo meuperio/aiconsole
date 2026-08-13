@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Play, RotateCcw, CheckCircle2, XCircle, AlertCircle } from 'lucide-react';
 import { extractClaims, alignClaims } from '../utils/api';
+import { enforceOneGroupPerClaim } from '../utils/triage';
 import { GOLD_QUESTION, GOLD_CANDIDATES, GOLD_MERGES } from '../data/goldSet';
 import { PipelineStage } from './PipelineStage';
 import type { Claim, Group } from '../types';
@@ -13,6 +14,11 @@ interface EvalReport {
     correct: number;
     falsePositive: Array<{ pipelineGroupId: string; reason: string }>;
     falseNegative: number;
+  };
+  alignmentMetrics: {
+    truePositives: number;
+    falsePositives: number;
+    falseNegatives: number;
   };
 }
 
@@ -52,7 +58,15 @@ export function EvalTab() {
 
       setStage('aligning');
       const shuffled = [...allClaims].sort(() => Math.random() - 0.5);
-      const groups = await alignClaims(shuffled);
+      const blindedClaims = shuffled.map(c => ({
+        id: c.id,
+        text: c.text,
+        type: c.type,
+        source_sentence: c.source_sentence,
+        hedged: c.hedged
+      }));
+      const rawGroups = await alignClaims(blindedClaims as Claim[]);
+      const groups = enforceOneGroupPerClaim(rawGroups, allClaims);
 
       setStage('evaluating');
       const evalReport = evaluatePipeline(groups, allClaims);
@@ -157,7 +171,59 @@ export function EvalTab() {
       }
     });
 
-    // (Assuming true oppositions would be checked against a gold opposition if we had one)
+    // 4. Calculate Pairwise Alignment Metrics
+    let alignTP = 0;
+    let alignFP = 0;
+    let alignFN = 0;
+
+    const sentenceToGold = new Map<string, string>();
+    GOLD_MERGES.forEach(g => {
+       g.expectedSentences.forEach(s => sentenceToGold.set(s, g.name));
+    });
+
+    groups.forEach(g => {
+       const groupSentences = g.claim_ids.map(id => allClaims.find(c => c.id === id)?.source_sentence).filter(Boolean) as string[];
+       
+       for(let i=0; i<groupSentences.length; i++) {
+          for(let j=i+1; j<groupSentences.length; j++) {
+             const s1 = groupSentences[i];
+             const s2 = groupSentences[j];
+             const g1 = sentenceToGold.get(s1);
+             const g2 = sentenceToGold.get(s2);
+             
+             if (g1 && g2) {
+                if (g1 === g2) {
+                   alignTP++;
+                } else {
+                   alignFP++;
+                }
+             } else {
+               // If one is in gold and another isn't, technically it's a false positive pair
+               alignFP++;
+             }
+          }
+       }
+    });
+
+    GOLD_MERGES.forEach(gold => {
+       const matchedClaims = allClaims.filter(c => gold.expectedSentences.some(s => s.includes(c.source_sentence) || c.source_sentence.includes(s)));
+       for(let i=0; i<matchedClaims.length; i++) {
+          for(let j=i+1; j<matchedClaims.length; j++) {
+             const c1 = matchedClaims[i].id;
+             const c2 = matchedClaims[j].id;
+             const sameGroup = groups.some(g => g.claim_ids.includes(c1) && g.claim_ids.includes(c2));
+             if (!sameGroup) {
+                alignFN++;
+             }
+          }
+       }
+    });
+
+    report.alignmentMetrics = {
+      truePositives: alignTP,
+      falsePositives: alignFP,
+      falseNegatives: alignFN
+    };
 
     return report;
   };
@@ -224,6 +290,27 @@ export function EvalTab() {
                     : 'N/A'}
                 </div>
                 <div className="text-[10px] text-[#737373] uppercase tracking-wider font-bold">Conflict Recall</div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="bg-[#171719] border border-[#262626] rounded-lg p-4 text-center flex flex-col justify-center">
+                <div className="text-3xl font-light text-[#10B981] mb-1">
+                  {report.alignmentMetrics.truePositives > 0 || report.alignmentMetrics.falsePositives > 0
+                    ? Math.round((report.alignmentMetrics.truePositives / (report.alignmentMetrics.truePositives + report.alignmentMetrics.falsePositives)) * 100) + '%'
+                    : 'N/A'}
+                </div>
+                <div className="text-[10px] text-[#737373] uppercase tracking-wider font-bold">Alignment Precision</div>
+                <div className="text-[9px] text-[#525252] mt-1">TP: {report.alignmentMetrics.truePositives} / FP: {report.alignmentMetrics.falsePositives}</div>
+              </div>
+              <div className="bg-[#171719] border border-[#262626] rounded-lg p-4 text-center flex flex-col justify-center">
+                <div className="text-3xl font-light text-[#FBBF24] mb-1">
+                  {report.alignmentMetrics.truePositives > 0 || report.alignmentMetrics.falseNegatives > 0
+                    ? Math.round((report.alignmentMetrics.truePositives / (report.alignmentMetrics.truePositives + report.alignmentMetrics.falseNegatives)) * 100) + '%'
+                    : 'N/A'}
+                </div>
+                <div className="text-[10px] text-[#737373] uppercase tracking-wider font-bold">Alignment Recall</div>
+                <div className="text-[9px] text-[#525252] mt-1">TP: {report.alignmentMetrics.truePositives} / FN: {report.alignmentMetrics.falseNegatives}</div>
               </div>
             </div>
 

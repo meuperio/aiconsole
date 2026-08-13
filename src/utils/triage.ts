@@ -1,5 +1,39 @@
 import { Claim, Group, TriagedGroup, AgreementStatus, VerifyDecision } from '../types';
 
+export function enforceOneGroupPerClaim(groups: Group[], allClaims: Claim[]): Group[] {
+  const usedClaimIds = new Set<string>();
+  const validGroups: Group[] = [];
+  let groupCounter = groups.length + 1;
+
+  for (const g of groups) {
+    const uniqueClaimsForGroup = [];
+    for (const cid of g.claim_ids) {
+      if (!usedClaimIds.has(cid)) {
+        usedClaimIds.add(cid);
+        uniqueClaimsForGroup.push(cid);
+      }
+    }
+    if (uniqueClaimsForGroup.length > 0) {
+      validGroups.push({ ...g, claim_ids: uniqueClaimsForGroup });
+    }
+  }
+
+  // Any missing claims get their own solo group (AC-03 validation constraint)
+  for (const c of allClaims) {
+    if (!usedClaimIds.has(c.id)) {
+      validGroups.push({
+        group_id: `G_orphan_${groupCounter++}`,
+        claim_ids: [c.id],
+        canonical: c.text,
+        relation: 'same',
+        disagreement: null,
+      });
+    }
+  }
+
+  return validGroups;
+}
+
 export function computeTriage(
   groups: Group[],
   allClaims: Claim[],
@@ -48,6 +82,9 @@ export function computeTriage(
     } else if (group.relation === 'opposed') {
       verify_decision = 'verify';
       verify_reason = 'models disagree';
+    } else if (claim_type === 'capability') {
+      verify_decision = 'verify';
+      verify_reason = 'capability assertions require external grounding';
     } else if (checkableTypes.includes(claim_type)) {
       verify_decision = 'verify';
       verify_reason = 'checkable fact type — verify even when unanimous';
