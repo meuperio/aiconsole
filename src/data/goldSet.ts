@@ -24,6 +24,12 @@ The largest missing assumptions are concurrency, requests per second, session du
 Azure App Service can scale horizontally, but this does not guarantee that the full system can handle 100,000 concurrent users.
 The SQL tier may need to be increased after load testing.
 Production approval should be based on measured load-test results rather than model estimates.`
+  },
+  {
+    label: "Candidate 4",
+    text: `The architecture is absolutely flawed because Azure App Service cannot scale horizontally under any circumstances.
+Azure SQL will never be a bottleneck.
+No load testing is required for Azure environments.`
   }
 ];
 
@@ -37,30 +43,33 @@ export interface GoldMerge {
 export const GOLD_MERGES: GoldMerge[] = [
   {
     name: "The database/SQL layer is the primary scaling risk",
-    relation: "same",
+    relation: "opposed",
+    verify_decision_expected: "verify",
     expectedSentences: [
       "Azure SQL could become the bottleneck if connection pooling and query behavior are not controlled.",
-      "The database layer is the highest scaling risk."
+      "The database layer is the highest scaling risk.",
+      "Azure SQL will never be a bottleneck."
     ]
   },
   {
-    name: "App Service scales horizontally, but horizontal scaling does not by itself establish system capacity",
-    relation: "same",
+    name: "Azure App Service horizontal scaling capability",
+    relation: "opposed",
+    verify_decision_expected: "verify",
     expectedSentences: [
       "Azure App Service can scale out to handle substantial concurrent traffic, but actual capacity depends on workload and instance sizing.",
-      "The design can support a large student population, but 100,000 registered users is not the same as 100,000 simultaneous users.", // Wait, the instruction says "all three candidates" for this concept.
-      // Let's refine based on the prompt's literal expected groupings.
-      "Azure App Service can scale horizontally, but this does not guarantee that the full system can handle 100,000 concurrent users."
+      "Azure App Service can scale horizontally, but this does not guarantee that the full system can handle 100,000 concurrent users.",
+      "The architecture is absolutely flawed because Azure App Service cannot scale horizontally under any circumstances."
     ]
   },
   {
     name: "Load testing is required before production approval",
-    relation: "same",
-    verify_decision_expected: "not_applicable",
+    relation: "opposed",
+    verify_decision_expected: "verify",
     expectedSentences: [
       "A load test should be completed before production.",
       "A production-scale load test is required.",
-      "Production approval should be based on measured load-test results rather than model estimates."
+      "Production approval should be based on measured load-test results rather than model estimates.",
+      "No load testing is required for Azure environments."
     ]
   },
   {

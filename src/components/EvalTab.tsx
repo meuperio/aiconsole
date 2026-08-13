@@ -32,7 +32,7 @@ export function EvalTab() {
     try {
       setStage('extracting');
       
-      const letterMap = ['A', 'B', 'C'];
+      const letterMap = ['A', 'B', 'C', 'D'];
       const blinded = GOLD_CANDIDATES.map((c, i) => ({
         ...c,
         prefix: letterMap[i],
@@ -101,6 +101,8 @@ export function EvalTab() {
     GOLD_MERGES.forEach(gold => {
       const { foundGroups, matchedClaims } = findGroupsForSentences(gold.expectedSentences);
       
+      const isOpposedGold = gold.relation === 'opposed';
+
       if (foundGroups.length === 1 && matchedClaims.length >= gold.expectedSentences.length * 0.8) {
         // Mostly found in exactly one group
         report.correctMerges.push({
@@ -109,6 +111,15 @@ export function EvalTab() {
           sentences: matchedClaims.map(c => c.source_sentence)
         });
         usedGroupIds.add(foundGroups[0]);
+
+        if (isOpposedGold) {
+          const group = groups.find(g => g.group_id === foundGroups[0]);
+          if (group && group.relation === 'opposed') {
+            report.oppositionCalls.correct++;
+          } else {
+            report.oppositionCalls.falseNegative++;
+          }
+        }
       } else if (foundGroups.length > 1) {
         // Split across multiple groups
         report.missedMerges.push({
@@ -116,23 +127,33 @@ export function EvalTab() {
           sentences: gold.expectedSentences,
           foundInGroups: foundGroups
         });
+        if (isOpposedGold) report.oppositionCalls.falseNegative++;
+      } else if (foundGroups.length === 0) {
+        // Did not match
+        report.missedMerges.push({
+          gold: gold.name,
+          sentences: gold.expectedSentences,
+          foundInGroups: []
+        });
+        if (isOpposedGold) report.oppositionCalls.falseNegative++;
       }
     });
 
-    // 2. Check False Merges (Groups that contain claims from multiple distinct gold concepts, or unrelated stuff)
-    // A simple heuristic: if a group wasn't matched fully by a gold merge, but contains multiple claims, 
-    // it might be a false merge. Since our gold set doesn't cover EVERY sentence perfectly, we will just 
-    // flag opposed groups as false positives for opposition, which is the main instruction.
-
     // 3. Check Opposition Calls
-    // The instructions state: "There are zero genuine oppositions in this gold set. If the pipeline reports any opposition, that is a false positive"
     groups.forEach(g => {
       if (g.relation === 'opposed') {
-        const groupClaims = g.claim_ids.map(id => allClaims.find(c => c.id === id)?.source_sentence || id);
-        report.oppositionCalls.falsePositive.push({
-          pipelineGroupId: g.group_id,
-          reason: `Pipeline marked as opposed: ${g.disagreement || 'No reason'}`,
+        const isKnownGold = GOLD_MERGES.some(gold => {
+          if (gold.relation !== 'opposed') return false;
+          const { foundGroups } = findGroupsForSentences(gold.expectedSentences);
+          return foundGroups.includes(g.group_id);
         });
+
+        if (!isKnownGold) {
+          report.oppositionCalls.falsePositive.push({
+            pipelineGroupId: g.group_id,
+            reason: `Pipeline marked as opposed but not in gold set: ${g.disagreement || 'No reason'}`,
+          });
+        }
       }
     });
 
@@ -186,20 +207,23 @@ export function EvalTab() {
                 <div className="text-3xl font-light text-[#FBBF24] mb-1">{report.missedMerges.length}</div>
                 <div className="text-[10px] text-[#737373] uppercase tracking-wider font-bold">Missed Merges</div>
               </div>
-              <div className="bg-[#171719] border border-[#262626] rounded-lg p-4 text-center">
-                <div className="text-3xl font-light text-[#F87171] mb-1">{report.oppositionCalls.falsePositive.length}</div>
-                <div className="text-[10px] text-[#737373] uppercase tracking-wider font-bold">False Oppositions</div>
-              </div>
+              
+              {/* Contradiction Metrics */}
               <div className="bg-[#171719] border border-[#262626] rounded-lg p-4 text-center">
                 <div className="text-3xl font-light text-[#3B82F6] mb-1">
-                  {prevReport ? (
-                    <span className="flex items-center justify-center gap-1">
-                      {report.correctMerges.length >= prevReport.correctMerges.length ? '▲' : '▼'}
-                      {Math.abs(report.correctMerges.length - prevReport.correctMerges.length)}
-                    </span>
-                  ) : '-'}
+                  {report.oppositionCalls.correct > 0 || report.oppositionCalls.falsePositive.length > 0
+                    ? Math.round((report.oppositionCalls.correct / (report.oppositionCalls.correct + report.oppositionCalls.falsePositive.length)) * 100) + '%'
+                    : 'N/A'}
                 </div>
-                <div className="text-[10px] text-[#737373] uppercase tracking-wider font-bold">vs Prev Run</div>
+                <div className="text-[10px] text-[#737373] uppercase tracking-wider font-bold">Conflict Precision</div>
+              </div>
+              <div className="bg-[#171719] border border-[#262626] rounded-lg p-4 text-center">
+                <div className="text-3xl font-light text-[#8B5CF6] mb-1">
+                  {report.oppositionCalls.correct > 0 || report.oppositionCalls.falseNegative > 0
+                    ? Math.round((report.oppositionCalls.correct / (report.oppositionCalls.correct + report.oppositionCalls.falseNegative)) * 100) + '%'
+                    : 'N/A'}
+                </div>
+                <div className="text-[10px] text-[#737373] uppercase tracking-wider font-bold">Conflict Recall</div>
               </div>
             </div>
 

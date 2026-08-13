@@ -19,31 +19,17 @@ export function computeTriage(
 
     // Compute agreement_status
     let agreement_status: AgreementStatus = 'solo';
-    if (candidateCount === 1) {
-      agreement_status = 'solo';
+    if (group.relation === 'opposed') {
+      agreement_status = 'split';
     } else if (candidateCount === totalCandidates && totalCandidates > 0) {
       agreement_status = 'unanimous';
     } else if (candidateCount > totalCandidates / 2) {
       agreement_status = 'majority';
-    } else if (group.relation === 'opposed' && candidateCount > 1) {
-      agreement_status = 'split';
+    } else if (candidateCount === 1) {
+      agreement_status = 'solo';
     } else {
-      // If it's 2 out of 4, it's not majority, it's not unanimous, it's not solo.
-      // The prompt does not explicitly define what to call exactly 50%.
-      // Let's call it split if opposed, otherwise it falls back. 
-      // If not opposed, and >1 but <= half... let's default to split or majority?
-      // Wait, prompt: "majority - more than half but not all".
-      // "split - represented by multiple candidates with relation: opposed"
-      // What if it's 2 out of 4 and relation is 'same'?
-      // I'll extend majority to include >= half just for completeness, 
-      // or add 'minority'. Let's just use 'split' if not majority, just to fit the 4 labels.
-      // Wait, "A group with 2 of 3 candidates is majority, never solo."
-      if (candidateCount > 1) {
-        agreement_status = 'majority'; // Fallback if it's 50%.
-      }
-      if (group.relation === 'opposed' && candidateCount > 1) {
-        agreement_status = 'split';
-      }
+      // Fallback for minority matching "partial/minority" from BRD but keeping it within current types.
+      agreement_status = 'split'; 
     }
 
     // Compute claim_type (take the first claim's type, assuming they should be similar, 

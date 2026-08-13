@@ -96,16 +96,22 @@ export function ConsoleTab() {
         const extResults = await Promise.allSettled(extPromises);
         
         let allClaims: Claim[] = [];
-        let hasErrors = false;
+        let failedCandidates: string[] = [];
         
-        extResults.forEach((res) => {
+        extResults.forEach((res, index) => {
           if (res.status === 'fulfilled') {
             allClaims = allClaims.concat(res.value);
           } else {
-            hasErrors = true;
-            console.error("Extraction failed for a candidate", res.reason);
+            failedCandidates.push(blinded[index].label);
           }
         });
+
+        if (failedCandidates.length > 0) {
+          if (allClaims.length > 0) {
+            currentClaims = allClaims; // Preserve successful ones
+          }
+          throw new Error(`Extraction failed for: ${failedCandidates.join(', ')}`);
+        }
 
         if (allClaims.length === 0) {
           throw new Error("No claims could be extracted from any candidate.");
@@ -131,7 +137,16 @@ export function ConsoleTab() {
         // Shuffle claims as requested to prevent model bias
         const shuffled = [...currentClaims].sort(() => Math.random() - 0.5);
         
-        const groups = await alignClaims(shuffled);
+        // AC-01: Blinding. Strip candidate identity before alignment.
+        const blindedClaims = shuffled.map(c => ({
+          id: c.id,
+          text: c.text,
+          type: c.type,
+          source_sentence: c.source_sentence,
+          hedged: c.hedged
+        }));
+        
+        const groups = await alignClaims(blindedClaims as Claim[]);
         
         // Stage 4: Triage (Deterministic)
         const validCandidatesCount = candidates.filter(c => c.text.trim().length > 0).length;
