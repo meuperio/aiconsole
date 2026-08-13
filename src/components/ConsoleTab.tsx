@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { Lock, Unlock, Play, RotateCcw, AlertTriangle, Bug } from 'lucide-react';
 import { extractClaims, alignClaims, checkConstraints } from '../utils/api';
-import { computeTriage, enforceOneGroupPerClaim } from '../utils/triage';
+import { computeTriage, enforceOneGroupPerClaim, validateGroupIntegrity } from '../utils/triage';
 import { PipelineStage } from './PipelineStage';
 import type { 
-  CandidateInput, PipelineResults, Claim, TriagedGroup, CandidateResult 
+  CandidateInput, PipelineResults, Claim, TriagedGroup, CandidateResult, GroupIntegrityReport 
 } from '../types';
 
 export function ConsoleTab() {
@@ -68,6 +68,7 @@ export function ConsoleTab() {
     let currentGroups: TriagedGroup[] = results?.groups || [];
     let currentChecks: CandidateResult[] = results?.constraintChecks || [];
     let currentSuccessCount = results?.successfulCandidatesCount || candidates.filter(c => c.text.trim().length > 0).length;
+    let currentIntegrityReport: GroupIntegrityReport | undefined = results?.integrityReport;
 
     const shouldRunExt = !retryStage || retryStage === 'ext' || retryStage === 'retry-failed-ext';
     const isRetryingFailed = retryStage === 'retry-failed-ext';
@@ -163,6 +164,7 @@ export function ConsoleTab() {
         }));
         
         const rawGroups = await alignClaims(blindedClaims as Claim[]);
+        currentIntegrityReport = validateGroupIntegrity(rawGroups, currentClaims);
         const validatedGroups = enforceOneGroupPerClaim(rawGroups, currentClaims);
         
         // Stage 4: Triage (Deterministic)
@@ -181,7 +183,7 @@ export function ConsoleTab() {
         setAlignError(err.message);
         setIsRunning(false);
         // Save intermediate state
-        setResults({ claims: currentClaims, groups: currentGroups, constraintChecks: currentChecks, successfulCandidatesCount: currentSuccessCount });
+        setResults({ claims: currentClaims, groups: currentGroups, constraintChecks: currentChecks, successfulCandidatesCount: currentSuccessCount, integrityReport: currentIntegrityReport });
         return;
       }
     }
@@ -210,7 +212,7 @@ export function ConsoleTab() {
         setCheckError(err.message);
         setIsRunning(false);
         // Save intermediate state
-        setResults({ claims: currentClaims, groups: currentGroups, constraintChecks: currentChecks, successfulCandidatesCount: currentSuccessCount });
+        setResults({ claims: currentClaims, groups: currentGroups, constraintChecks: currentChecks, successfulCandidatesCount: currentSuccessCount, integrityReport: currentIntegrityReport });
         return;
       }
     } else if (!constraints.trim()) {
@@ -221,7 +223,8 @@ export function ConsoleTab() {
       claims: currentClaims,
       groups: currentGroups,
       constraintChecks: currentChecks,
-      successfulCandidatesCount: currentSuccessCount
+      successfulCandidatesCount: currentSuccessCount,
+      integrityReport: currentIntegrityReport
     });
     setIsRunning(false);
   };

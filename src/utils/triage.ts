@@ -1,4 +1,35 @@
-import { Claim, Group, TriagedGroup, AgreementStatus, VerifyDecision } from '../types';
+import { Claim, Group, TriagedGroup, AgreementStatus, VerifyDecision, GroupIntegrityReport } from '../types';
+
+export function validateGroupIntegrity(groups: Group[], allClaims: Claim[]): GroupIntegrityReport {
+  const allValidClaimIds = new Set(allClaims.map(c => c.id));
+  const seenClaimIds = new Set<string>();
+  
+  const report: GroupIntegrityReport = {
+    duplicates: [],
+    missing: [],
+    unknown: []
+  };
+
+  for (const group of groups) {
+    for (const cid of group.claim_ids) {
+      if (!allValidClaimIds.has(cid)) {
+        report.unknown.push(cid);
+      } else if (seenClaimIds.has(cid)) {
+        report.duplicates.push(cid);
+      } else {
+        seenClaimIds.add(cid);
+      }
+    }
+  }
+
+  for (const c of allClaims) {
+    if (!seenClaimIds.has(c.id)) {
+      report.missing.push(c.id);
+    }
+  }
+
+  return report;
+}
 
 export function enforceOneGroupPerClaim(groups: Group[], allClaims: Claim[]): Group[] {
   const usedClaimIds = new Set<string>();

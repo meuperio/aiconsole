@@ -43,10 +43,12 @@ This document tracks the remaining tasks and known gaps based on the initial MVP
 - [x] Write unit tests for `computeTriage` to guarantee agreement status (unanimous, majority, split, solo) and verification decisions behave deterministically.
 - [x] Write unit tests for the evaluation engine metrics (precision/recall calculations).
 
-## 6. Build Verification
+## 7. MVP 0.1 Go / No-Go Blockers
 **Status:** COMPLETE
-**Problem:** No mechanism exists to strictly verify the build, types, and tests in a single command pipeline.
+**Problem:** A recent review identified a critical schema regression in the alignment endpoint, missing test runner dependencies, and a need for explicit integrity failure reporting in Eval mode.
 **Tasks:**
-- [x] Setup standard npm scripts (`npm run verify`) that chains linting, type-checking, and unit tests.
-- [x] (Future) Add CI workflow configuration (e.g., GitHub Actions) to run this verification automatically on code changes.
+- [x] Correct `/api/align` responseSchema from `claims[]` to `groups[]`.
+- [x] Add `vitest` to devDependencies and ensure `package-lock.json` is updated.
+- [x] Add deterministic group-integrity reporting (`validateGroupIntegrity`) before automatic repair, and render integrity violations in Eval Mode.
+- [x] Add GitHub Actions (or equivalent CI) configuration to verify the build in a clean environment (`.github/workflows/verify.yml`).
 

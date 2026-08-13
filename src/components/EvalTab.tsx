@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { Play, RotateCcw, CheckCircle2, XCircle, AlertCircle } from 'lucide-react';
 import { extractClaims, alignClaims } from '../utils/api';
-import { enforceOneGroupPerClaim } from '../utils/triage';
+import { enforceOneGroupPerClaim, validateGroupIntegrity } from '../utils/triage';
 import { GOLD_QUESTION, GOLD_CANDIDATES, GOLD_MERGES } from '../data/goldSet';
 import { PipelineStage } from './PipelineStage';
-import type { Claim, Group } from '../types';
+import type { Claim, Group, GroupIntegrityReport } from '../types';
 
 interface EvalReport {
   correctMerges: Array<{ gold: string; pipelineGroupId: string; sentences: string[] }>;
@@ -20,6 +20,7 @@ interface EvalReport {
     falsePositives: number;
     falseNegatives: number;
   };
+  integrityReport: GroupIntegrityReport;
 }
 
 export function EvalTab() {
@@ -69,7 +70,7 @@ export function EvalTab() {
       const groups = enforceOneGroupPerClaim(rawGroups, allClaims);
 
       setStage('evaluating');
-      const evalReport = evaluatePipeline(groups, allClaims);
+      const evalReport = evaluatePipeline(rawGroups, groups, allClaims);
       setReport(evalReport);
       setStage('success');
     } catch (err: any) {
@@ -80,7 +81,7 @@ export function EvalTab() {
     }
   };
 
-  const evaluatePipeline = (groups: Group[], allClaims: Claim[]): EvalReport => {
+  const evaluatePipeline = (rawGroups: Group[], groups: Group[], allClaims: Claim[]): EvalReport => {
     const report: EvalReport = {
       correctMerges: [],
       missedMerges: [],
@@ -94,7 +95,8 @@ export function EvalTab() {
         truePositives: 0,
         falsePositives: 0,
         falseNegatives: 0
-      }
+      },
+      integrityReport: validateGroupIntegrity(rawGroups, allClaims)
     };
 
     // Helper: Find which group(s) a list of sentences ended up in
@@ -399,6 +401,35 @@ export function EvalTab() {
                     </div>
                   ))}
                   {report.missedMerges.length === 0 && <p className="text-xs text-[#737373]">None found.</p>}
+                </div>
+              </section>
+
+              <section>
+                <h3 className="text-sm font-medium text-[#F87171] mb-3 flex items-center gap-2">
+                  <XCircle className="w-4 h-4" /> Integrity Violations
+                </h3>
+                <div className="space-y-2">
+                  {report?.integrityReport && (report.integrityReport.duplicates.length > 0 || report.integrityReport.missing.length > 0 || report.integrityReport.unknown.length > 0) ? (
+                    <div className="bg-[#111112] border border-[#991B1B]/30 rounded p-3 text-sm">
+                      {report.integrityReport.duplicates.length > 0 && (
+                        <div className="mb-2">
+                          <strong className="text-[#FECACA]">Duplicates:</strong> {report.integrityReport.duplicates.join(', ')}
+                        </div>
+                      )}
+                      {report.integrityReport.missing.length > 0 && (
+                        <div className="mb-2">
+                          <strong className="text-[#FECACA]">Missing:</strong> {report.integrityReport.missing.join(', ')}
+                        </div>
+                      )}
+                      {report.integrityReport.unknown.length > 0 && (
+                        <div>
+                          <strong className="text-[#FECACA]">Unknown IDs:</strong> {report.integrityReport.unknown.join(', ')}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-[#737373]">None found. Group integrity is mathematically sound.</p>
+                  )}
                 </div>
               </section>
 

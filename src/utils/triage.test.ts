@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeTriage, enforceOneGroupPerClaim } from './triage';
+import { computeTriage, enforceOneGroupPerClaim, validateGroupIntegrity } from './triage';
 import type { Claim, Group } from '../types';
 
 describe('Triage Logic', () => {
@@ -71,6 +71,25 @@ describe('Triage Logic', () => {
 });
 
 describe('Claim Group Integrity', () => {
+  it('validates integrity before enforcement', () => {
+    const claims: Claim[] = [
+      { id: 'C1', text: 'claim 1', type: 'capability', candidateLabel: 'Candidate A', originalCandidateId: 'A', source_sentence: '', hedged: false },
+      { id: 'C2', text: 'claim 2', type: 'capability', candidateLabel: 'Candidate B', originalCandidateId: 'B', source_sentence: '', hedged: false },
+      { id: 'C3', text: 'claim 3', type: 'capability', candidateLabel: 'Candidate C', originalCandidateId: 'C', source_sentence: '', hedged: false },
+    ];
+    
+    const rawGroups: Group[] = [
+      { group_id: 'G1', claim_ids: ['C1', 'C2', 'Unknown1'], canonical: 'Group 1', relation: 'same', disagreement: null },
+      { group_id: 'G2', claim_ids: ['C2'], canonical: 'Group 2', relation: 'same', disagreement: null } // C2 duplicate, C3 missing
+    ];
+
+    const report = validateGroupIntegrity(rawGroups, claims);
+    
+    expect(report.duplicates).toEqual(['C2']);
+    expect(report.missing).toEqual(['C3']);
+    expect(report.unknown).toEqual(['Unknown1']);
+  });
+
   it('enforces one group per claim, stripping duplicates', () => {
     const claims: Claim[] = [
       { id: 'C1', text: 'claim 1', type: 'capability', candidateLabel: 'Candidate A', source_sentence: '', hedged: false },

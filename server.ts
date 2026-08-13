@@ -130,29 +130,28 @@ ${JSON.stringify(claims, null, 2)}`;
           responseSchema: {
             type: "OBJECT",
             properties: {
-              claims: {
+              groups: {
                 type: "ARRAY",
                 items: {
                   type: "OBJECT",
                   properties: {
-                    id: { type: "STRING" },
-                    text: { type: "STRING" },
-                    type: {
-                      type: "STRING",
-                      enum: [
-                        "date", "quantity", "version", "citation",
-                        "capability", "requirement", "causal",
-                        "recommendation", "opinion", "inference"
-                      ]
+                    group_id: { type: "STRING" },
+                    claim_ids: {
+                      type: "ARRAY",
+                      items: { type: "STRING" }
                     },
-                    source_sentence: { type: "STRING" },
-                    hedged: { type: "BOOLEAN" }
+                    canonical: { type: "STRING" },
+                    relation: {
+                      type: "STRING",
+                      enum: ["same", "opposed", "partial"]
+                    },
+                    disagreement: { type: "STRING", nullable: true }
                   },
-                  required: ["id", "text", "type", "source_sentence", "hedged"]
+                  required: ["group_id", "claim_ids", "canonical", "relation"]
                 }
               }
             },
-            required: ["claims"]
+            required: ["groups"]
           }
         },
       });

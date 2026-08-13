@@ -60,9 +60,16 @@ export interface CandidateInput {
   text: string;
 }
 
+export interface GroupIntegrityReport {
+  duplicates: string[];
+  missing: string[];
+  unknown: string[];
+}
+
 export interface PipelineResults {
   claims: Claim[];
   groups: TriagedGroup[];
   constraintChecks: CandidateResult[];
   successfulCandidatesCount: number;
+  integrityReport?: GroupIntegrityReport;
 }
