@@ -59,11 +59,44 @@ This document tracks the remaining tasks and known gaps based on the initial MVP
 - [x] Write unit tests for the evaluation engine metrics (precision/recall calculations).
 
 ## 7. MVP 0.1 Go / No-Go Blockers
-**Status:** COMPLETE
+**Status:** IN PROGRESS
 **Problem:** A recent review identified a critical schema regression in the alignment endpoint, missing test runner dependencies, and a need for explicit integrity failure reporting in Eval mode.
 **Tasks:**
 - [x] Correct `/api/align` responseSchema from `claims[]` to `groups[]`.
 - [x] Add `vitest` to devDependencies and ensure `package-lock.json` is updated.
 - [x] Add deterministic group-integrity reporting (`validateGroupIntegrity`) before automatic repair, and render integrity violations in Eval Mode.
 - [x] Add GitHub Actions (or equivalent CI) configuration to verify the build in a clean environment (`.github/workflows/verify.yml`).
+
+## MVP 0.1 — CLAIM ENGINE
+
+**Input:**
+- Original question
+- 2–4 pasted candidate answers
+- Optional constraints
+
+**Processing:**
+- Blind candidate identities
+- Extract atomic claims
+- Preserve source sentences and hedging
+- Align semantically equivalent claims
+- Detect same / partial / opposed
+- Detect unanimous / majority / solo / split
+- Perform deterministic verification triage
+- Validate missing / duplicate / unknown claim IDs
+
+**Outputs:**
+- Claim Matrix
+- Claim Inspector
+- Verification Candidates
+- Alignment metrics
+- Conflict metrics
+- Integrity violations
+- Evaluation report
+
+**Exit Condition:**
+- [x] CI green
+- [x] Tests green
+- [x] Build green
+- [ ] Benchmark threshold achieved
+- [ ] Manual scenario validation passed
 
