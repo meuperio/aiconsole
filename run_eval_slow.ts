@@ -275,7 +275,6 @@ async function main() {
     const enrichedClaims = claims.map(c => ({
       ...c,
       candidateLabel: candidate.label,
-      originalCandidateId: candidate.id
     }));
     allClaims.push(...enrichedClaims);
     charCode++;
