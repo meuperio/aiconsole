@@ -1,0 +1,6 @@
+{
+  "name": "Claim Verification Console",
+  "description": "An analysis tool that extracts and aligns atomic claims across multiple AI-generated answers to surface consensus, conflict, and constraint violations.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
